@@ -55,10 +55,7 @@ from dagster._core.storage.partition_status_cache import (
 )
 from dagster._core.workspace.context import WorkspaceRequestContext
 
-from dagster_graphql.implementation.loader import (
-    CrossRepoAssetDependedByLoader,
-    StaleStatusLoader,
-)
+from dagster_graphql.implementation.loader import CrossRepoAssetDependedByLoader, StaleStatusLoader
 
 if TYPE_CHECKING:
     from ..schema.asset_graph import GrapheneAssetNode, GrapheneAssetNodeDefinitionCollision
@@ -425,7 +422,7 @@ def get_partition_subsets(
     if not partitions_def:
         return None, None, None
 
-    if instance.can_cache_asset_status_data() and is_cacheable_partition_type(partitions_def):
+    if instance.can_read_asset_status_cache() and is_cacheable_partition_type(partitions_def):
         # When the "cached_status_data" column exists in storage, update the column to contain
         # the latest partition status values
         updated_cache_value = get_and_update_asset_status_cache_value(

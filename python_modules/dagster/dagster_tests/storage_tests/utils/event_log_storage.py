@@ -91,9 +91,7 @@ from dagster._core.remote_representation.origin import (
     RemoteJobOrigin,
     RemoteRepositoryOrigin,
 )
-from dagster._core.storage.asset_check_execution_record import (
-    AssetCheckExecutionRecordStatus,
-)
+from dagster._core.storage.asset_check_execution_record import AssetCheckExecutionRecordStatus
 from dagster._core.storage.event_log import InMemoryEventLogStorage, SqlEventLogStorage
 from dagster._core.storage.event_log.base import EventLogStorage
 from dagster._core.storage.event_log.migration import (
@@ -651,8 +649,23 @@ class TestEventLogStorage:
             storage.store_event(create_test_event_log_record(str(2), run_id=other_run_id))
             storage.store_event(create_test_event_log_record("D", run_id=test_run_id))
 
-            result = storage.get_records_for_run(test_run_id, ascending=True)
-            storage_ids = [r.storage_id for r in result.records]
+            desc_result = storage.get_records_for_run(test_run_id, ascending=False)
+            assert [r.event_log_entry.user_message for r in desc_result.records] == [
+                "D",
+                "C",
+                "B",
+                "A",
+            ]
+
+            asc_result = storage.get_records_for_run(test_run_id, ascending=True)
+            assert [r.event_log_entry.user_message for r in asc_result.records] == [
+                "A",
+                "B",
+                "C",
+                "D",
+            ]
+
+            storage_ids = [r.storage_id for r in asc_result.records]
             assert len(storage_ids) == 4
 
             def _cursor(storage_id: int):
@@ -4800,18 +4813,23 @@ class TestEventLogStorage:
             for field in cache_value._fields:
                 assert getattr(cache_value, field) is not None
 
-            storage.update_asset_cached_status_data(asset_key=asset_key, cache_values=cache_value)
+            if storage.can_write_asset_status_cache():
+                storage.update_asset_cached_status_data(
+                    asset_key=asset_key, cache_values=cache_value
+                )
 
-            assert _get_cached_status_for_asset(storage, asset_key) == cache_value
+                assert _get_cached_status_for_asset(storage, asset_key) == cache_value
 
-            cache_value = AssetStatusCacheValue(
-                latest_storage_id=1,
-                partitions_def_id=None,
-                serialized_materialized_partition_subset=None,
-            )
-            storage.update_asset_cached_status_data(asset_key=asset_key, cache_values=cache_value)
+                cache_value = AssetStatusCacheValue(
+                    latest_storage_id=1,
+                    partitions_def_id=None,
+                    serialized_materialized_partition_subset=None,
+                )
 
-            assert _get_cached_status_for_asset(storage, asset_key) == cache_value
+                storage.update_asset_cached_status_data(
+                    asset_key=asset_key, cache_values=cache_value
+                )
+                assert _get_cached_status_for_asset(storage, asset_key) == cache_value
 
             if self.can_wipe():
                 cache_value = AssetStatusCacheValue(

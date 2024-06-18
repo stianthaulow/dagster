@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Sequence
 
-import pendulum
 import pytest
 from dagster import (
     AssetKey,
@@ -21,11 +20,7 @@ from dagster import (
 from dagster._check import ParameterCheckError
 from dagster._core.definitions import AssetIn, SourceAsset, asset, multi_asset
 from dagster._core.definitions.asset_graph import AssetGraph
-from dagster._core.definitions.asset_spec import (
-    SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE,
-    AssetExecutionType,
-    AssetSpec,
-)
+from dagster._core.definitions.asset_spec import AssetExecutionType, AssetSpec
 from dagster._core.definitions.backfill_policy import BackfillPolicy
 from dagster._core.definitions.definitions_class import Definitions
 from dagster._core.definitions.external_asset import external_assets_from_specs
@@ -47,6 +42,7 @@ from dagster._core.remote_representation.external_data import (
     external_time_window_partitions_definition_from_def,
 )
 from dagster._serdes import deserialize_value, serialize_value, unpack_value
+from dagster._time import create_datetime, get_timezone
 from dagster._utils.partitions import DEFAULT_HOURLY_FORMAT_WITHOUT_TIMEZONE
 
 
@@ -160,7 +156,7 @@ def test_asset_with_single_run_backfill_policy():
 def test_asset_with_multi_run_backfill_policy():
     partitions_def_data = ExternalTimeWindowPartitionsDefinitionData(
         cron_schedule="5 13 * * 0",
-        start=pendulum.instance(datetime(year=2022, month=5, day=5), tz="US/Central").timestamp(),
+        start=create_datetime(year=2022, month=5, day=5, tz="US/Central").timestamp(),
         timezone="US/Central",
         fmt=DEFAULT_HOURLY_FORMAT_WITHOUT_TIMEZONE,
         end_offset=1,
@@ -316,9 +312,6 @@ def test_input_name_matches_output_name():
             execution_type=AssetExecutionType.UNEXECUTABLE,
             job_names=[],
             group_name=DEFAULT_GROUP_NAME,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
         ),
         ExternalAssetNode(
             asset_key=AssetKey("something"),
@@ -781,9 +774,6 @@ def test_source_asset_with_op():
             depended_by=[ExternalAssetDependedBy(AssetKey("bar"))],
             job_names=[],
             group_name=DEFAULT_GROUP_NAME,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
         ),
     ]
 
@@ -805,9 +795,6 @@ def test_unused_source_asset():
             job_names=[],
             group_name=DEFAULT_GROUP_NAME,
             is_source=True,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
         ),
         ExternalAssetNode(
             asset_key=AssetKey("foo"),
@@ -818,9 +805,6 @@ def test_unused_source_asset():
             job_names=[],
             group_name=DEFAULT_GROUP_NAME,
             is_source=True,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
         ),
     ]
 
@@ -850,9 +834,6 @@ def test_used_source_asset():
             job_names=[],
             group_name=DEFAULT_GROUP_NAME,
             is_source=True,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
             tags={"biz": "baz"},
         ),
         ExternalAssetNode(
@@ -1141,10 +1122,7 @@ def test_back_compat_external_sensor():
 def _check_partitions_def_equal(
     p1: TimeWindowPartitionsDefinition, p2: TimeWindowPartitionsDefinition
 ):
-    assert (
-        pendulum.instance(p1.start, tz=p1.timezone).timestamp()
-        == pendulum.instance(p2.start, tz=p2.timezone).timestamp()
-    )
+    assert p1.start.timestamp() == p2.start.timestamp()
     assert p1.timezone == p2.timezone
     assert p1.fmt == p2.fmt
     assert p1.end_offset == p2.end_offset
@@ -1156,8 +1134,8 @@ def test_back_compat_external_time_window_partitions_def():
 
     external = ExternalTimeWindowPartitionsDefinitionData(
         schedule_type=ScheduleType.WEEKLY,
-        start=pendulum.instance(start, tz="US/Central").timestamp(),
-        timezone="US/Central",
+        start=datetime(year=2022, month=5, day=5, tzinfo=get_timezone("Europe/Berlin")).timestamp(),
+        timezone="Europe/Berlin",
         fmt=DEFAULT_HOURLY_FORMAT_WITHOUT_TIMEZONE,
         end_offset=1,
         minute_offset=5,
@@ -1169,7 +1147,7 @@ def test_back_compat_external_time_window_partitions_def():
         TimeWindowPartitionsDefinition(
             schedule_type=ScheduleType.WEEKLY,
             start=start,
-            timezone="US/Central",
+            timezone="Europe/Berlin",
             fmt=DEFAULT_HOURLY_FORMAT_WITHOUT_TIMEZONE,
             end_offset=1,
             minute_offset=5,
@@ -1265,9 +1243,7 @@ def test_external_time_window_valid_partition_key():
     )
     assert (
         external_partitions_def.get_partitions_definition().start.timestamp()
-        == pendulum.instance(
-            datetime.strptime("2023-03-11-15:00", "%Y-%m-%d-%H:%M"), tz="UTC"
-        ).timestamp()
+        == create_datetime(2023, 3, 11, 15).timestamp()
     )
 
 
@@ -1288,9 +1264,6 @@ def test_external_assets_def_to_external_asset_graph():
             dependencies=[],
             depended_by=[ExternalAssetDependedBy(downstream_asset_key=AssetKey("asset2"))],
             execution_type=AssetExecutionType.UNEXECUTABLE,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
             group_name=DEFAULT_GROUP_NAME,
         ),
         ExternalAssetNode(
@@ -1298,9 +1271,6 @@ def test_external_assets_def_to_external_asset_graph():
             dependencies=[ExternalAssetDependency(upstream_asset_key=AssetKey(["asset1"]))],
             depended_by=[],
             execution_type=AssetExecutionType.UNEXECUTABLE,
-            metadata={
-                SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE: AssetExecutionType.UNEXECUTABLE.value
-            },
             group_name=DEFAULT_GROUP_NAME,
         ),
     ]

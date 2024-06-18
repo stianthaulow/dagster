@@ -2,9 +2,7 @@ import os
 from typing import Any, Dict
 
 import pytest
-from dagster import (
-    AssetExecutionContext,
-)
+from dagster import AssetExecutionContext
 from dagster._core.definitions.metadata.metadata_set import TableMetadataSet
 from dagster_dbt.asset_decorator import dbt_assets
 from dagster_dbt.core.resources_v2 import DbtCliResource
@@ -32,15 +30,15 @@ def test_storage_address(
     # spot check a few storage addresses
     assert (
         storage_address_metas["customers"].relation_identifier
-        == f'"{jaffle_shop_duckdb_dbfile_name}"."dev"."customers"'
+        == f"{jaffle_shop_duckdb_dbfile_name}.dev.customers"
     )
     assert (
         storage_address_metas["raw_customers"].relation_identifier
-        == f'"{jaffle_shop_duckdb_dbfile_name}"."dev"."raw_customers"'
+        == f"{jaffle_shop_duckdb_dbfile_name}.dev.raw_customers"
     )
     assert (
         storage_address_metas["stg_orders"].relation_identifier
-        == f'"{jaffle_shop_duckdb_dbfile_name}"."dev"."stg_orders"'
+        == f"{jaffle_shop_duckdb_dbfile_name}.dev.stg_orders"
     )
 
 
@@ -66,9 +64,9 @@ def test_storage_address_alias(
     # user-defined aliases
     assert (
         storage_address_metas["customers"].relation_identifier
-        == f'"{jaffle_shop_duckdb_dbfile_name}"."main"."dagster.customers"'
+        == f"{jaffle_shop_duckdb_dbfile_name}.main.dagster.customers"
     )
     assert (
         storage_address_metas["orders"].relation_identifier
-        == f'"{jaffle_shop_duckdb_dbfile_name}"."main"."dagster.orders"'
+        == f"{jaffle_shop_duckdb_dbfile_name}.main.dagster.orders"
     )

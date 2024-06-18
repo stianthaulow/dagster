@@ -1,23 +1,14 @@
-import {
-  Box,
-  Menu,
-  MenuExternalLink,
-  MiddleTruncate,
-  Popover,
-  Tooltip,
-} from '@dagster-io/ui-components';
-import {Button, ExternalAnchorButton} from '@dagster-io/ui-components/src/components/Button';
-import {Icon, IconName} from '@dagster-io/ui-components/src/components/Icon';
+import {Box, Icon, IconName, MiddleTruncate, Tooltip} from '@dagster-io/ui-components';
 import * as React from 'react';
 
 import {CodeLinkProtocolContext, ProtocolData} from './CodeLinkProtocol';
 import {assertUnreachable} from '../app/Util';
-import {CodeReferencesMetadataEntry, SourceLocation} from '../graphql/types';
+import {SourceLocation} from '../graphql/types';
 
 const getCodeReferenceIcon = (codeReference: SourceLocation): IconName => {
   switch (codeReference.__typename) {
     case 'LocalFileCodeReference':
-      return 'open_in_new';
+      return 'code_block';
     case 'UrlCodeReference':
       return codeReference.url.includes('github') ? 'github' : 'gitlab';
     default:
@@ -39,7 +30,7 @@ const getCodeReferenceEntryLabel = (codeReference: SourceLocation): React.ReactE
         codeReference.label || (codeReference.url.split('/').pop()?.split('#')[0] as string);
       const sourceControlName = codeReference.url.includes('github') ? 'GitHub' : 'GitLab';
       return (
-        <Box flex={{direction: 'row', alignItems: 'center', gap: 4}}>
+        <Box flex={{direction: 'row', alignItems: 'center', gap: 4}} style={{whiteSpace: 'nowrap'}}>
           Open <MiddleTruncate text={labelOrUrl} /> in {sourceControlName}
         </Box>
       );
@@ -64,7 +55,7 @@ const getCodeReferenceLink = (
   }
 };
 
-const getCodeReferenceKey = (codeReference: SourceLocation): string => {
+export const getCodeReferenceKey = (codeReference: SourceLocation): string => {
   switch (codeReference.__typename) {
     case 'LocalFileCodeReference':
       return `${codeReference.filePath}:${codeReference.lineNumber}`;
@@ -75,63 +66,42 @@ const getCodeReferenceKey = (codeReference: SourceLocation): string => {
   }
 };
 
-export const CodeLink = ({codeLinkData}: {codeLinkData: CodeReferencesMetadataEntry}) => {
+export const getCodeReferenceTooltip = (codeReference: SourceLocation): string => {
+  switch (codeReference.__typename) {
+    case 'LocalFileCodeReference':
+      return `Open in editor`;
+    case 'UrlCodeReference':
+      if (codeReference.url.includes('github')) {
+        return `Open in GitHub`;
+      } else {
+        return `Open in GitLab`;
+      }
+    default:
+      assertUnreachable(codeReference);
+  }
+};
+
+export const CodeLink = ({sourceLocation}: {sourceLocation: SourceLocation}) => {
   const [codeLinkProtocol, _] = React.useContext(CodeLinkProtocolContext);
 
-  const sources = codeLinkData.codeReferences;
-
-  const hasMultipleCodeSources = sources.length > 1;
-  const firstSource = sources[0] as SourceLocation;
-
   return (
-    <Box flex={{alignItems: 'center'}}>
-      {hasMultipleCodeSources ? (
-        <Popover
-          position="bottom-right"
-          content={
-            <Menu>
-              {sources.map((source) => (
-                <Tooltip
-                  key={getCodeReferenceKey(source)}
-                  content={
-                    <Box style={{maxWidth: 500, wordBreak: 'break-all'}}>
-                      {getCodeReferenceLink(codeLinkProtocol, source)}
-                    </Box>
-                  }
-                  position="bottom"
-                  display="block"
-                >
-                  <MenuExternalLink
-                    text={getCodeReferenceEntryLabel(source)}
-                    href={getCodeReferenceLink(codeLinkProtocol, source)}
-                    icon={<Icon name={getCodeReferenceIcon(source)} />}
-                    style={{maxWidth: 300}}
-                  />
-                </Tooltip>
-              ))}
-            </Menu>
-          }
-        >
-          <Button rightIcon={<Icon name="expand_more" />}>Open source code</Button>
-        </Popover>
-      ) : (
+    <Box style={{minWidth: 0}} flex={{direction: 'row', gap: 8, alignItems: 'center'}}>
+      <Icon name={getCodeReferenceIcon(sourceLocation)} />
+      <a
+        target="_blank"
+        rel="noreferrer"
+        style={{minWidth: 0}}
+        href={getCodeReferenceLink(codeLinkProtocol, sourceLocation)}
+      >
         <Tooltip
-          content={
-            <Box style={{maxWidth: 500, wordBreak: 'break-all'}}>
-              {getCodeReferenceLink(codeLinkProtocol, firstSource)}
-            </Box>
-          }
+          display="block"
+          content={getCodeReferenceTooltip(sourceLocation)}
           position="bottom"
         >
-          <ExternalAnchorButton
-            icon={<Icon name={getCodeReferenceIcon(firstSource)} />}
-            href={getCodeReferenceLink(codeLinkProtocol, firstSource)}
-            style={{maxWidth: 300}}
-          >
-            {getCodeReferenceEntryLabel(firstSource)}
-          </ExternalAnchorButton>
+          {getCodeReferenceEntryLabel(sourceLocation)}
         </Tooltip>
-      )}
+      </a>
+      <Icon name="open_in_new" />
     </Box>
   );
 };

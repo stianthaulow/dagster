@@ -6,7 +6,7 @@ import signal
 import subprocess
 import sys
 import uuid
-from argparse import Namespace
+from argparse import ArgumentParser, Namespace
 from collections import abc
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -50,10 +50,7 @@ from dagster import (
     get_dagster_logger,
 )
 from dagster._annotations import experimental, public
-from dagster._core.definitions.metadata import (
-    TableMetadataSet,
-    TextMetadataValue,
-)
+from dagster._core.definitions.metadata import TableMetadataSet, TextMetadataValue
 from dagster._core.errors import DagsterExecutionInterruptedError, DagsterInvalidPropertyError
 from dagster._model.pydantic_compat_layer import compat_model_validator
 from dagster._utils import pushd
@@ -62,18 +59,14 @@ from dbt.adapters.base.impl import BaseAdapter, BaseColumn
 from dbt.adapters.factory import get_adapter, register_adapter, reset_adapters
 from dbt.config import RuntimeConfig
 from dbt.config.runtime import load_profile, load_project
+from dbt.config.utils import parse_cli_vars
 from dbt.contracts.results import NodeStatus, TestStatus
 from dbt.flags import get_flags, set_from_args
 from dbt.node_types import NodeType
 from dbt.version import __version__ as dbt_version
 from packaging import version
 from pydantic import Field, validator
-from sqlglot import (
-    MappingSchema,
-    exp,
-    parse_one,
-    to_table,
-)
+from sqlglot import MappingSchema, exp, parse_one, to_table
 from sqlglot.expressions import normalize_table_name
 from sqlglot.lineage import lineage
 from sqlglot.optimizer import optimize
@@ -92,16 +85,10 @@ from ..dagster_dbt_translator import (
     validate_opt_translator,
     validate_translator,
 )
-from ..dbt_manifest import (
-    DbtManifestParam,
-    validate_manifest,
-)
+from ..dbt_manifest import DbtManifestParam, validate_manifest
 from ..dbt_project import DbtProject
 from ..errors import DagsterDbtCliRuntimeError
-from ..utils import (
-    ASSET_RESOURCE_TYPES,
-    get_dbt_resource_props_by_dbt_unique_id_from_manifest,
-)
+from ..utils import ASSET_RESOURCE_TYPES, get_dbt_resource_props_by_dbt_unique_id_from_manifest
 from .utils import imap
 
 IS_DBT_CORE_VERSION_LESS_THAN_1_8_0 = version.parse(dbt_version) < version.parse("1.8.0")
@@ -377,7 +364,7 @@ class DbtCliEventMessage:
                         "This test was included in Dagster's asset check"
                         " selection, and was likely executed due to dbt indirect selection."
                     )
-                    logger.warn(message)
+                    logger.warning(message)
 
                 yield from self._yield_observation_events_for_test(
                     dagster_dbt_translator=dagster_dbt_translator,
@@ -431,7 +418,7 @@ class DbtCliInvocation:
     postprocessing_threadpool_num_threads: int = field(
         init=False, default=DEFAULT_EVENT_POSTPROCESSING_THREADPOOL_SIZE
     )
-    _stdout: List[str] = field(init=False, default_factory=list)
+    _stdout: List[Union[str, Dict[str, Any]]] = field(init=False, default_factory=list)
     _error_messages: List[str] = field(init=False, default_factory=list)
 
     @classmethod
@@ -534,7 +521,7 @@ class DbtCliInvocation:
         """
         self._stdout = list(self._stream_stdout())
 
-        return self.process.wait() == 0
+        return self.process.wait() == 0 and not self._error_messages
 
     @public
     def get_error(self) -> Optional[Exception]:
@@ -632,48 +619,44 @@ class DbtCliInvocation:
         """
         event_history_metadata_by_unique_id: Dict[str, Dict[str, Any]] = {}
 
-        for log in self._stdout or self._stream_stdout():
-            try:
-                raw_event: Dict[str, Any] = orjson.loads(log)
-                unique_id: Optional[str] = raw_event["data"].get("node_info", {}).get("unique_id")
-                is_result_event = DbtCliEventMessage.is_result_event(raw_event)
-                event_history_metadata: Dict[str, Any] = {}
-                if unique_id and is_result_event:
-                    event_history_metadata = copy.deepcopy(
-                        event_history_metadata_by_unique_id.get(unique_id, {})
-                    )
+        for raw_event in self._stdout or self._stream_stdout():
+            if isinstance(raw_event, str):
+                # If we can't parse the event, then just emit it as a raw log.
+                sys.stdout.write(raw_event + "\n")
+                sys.stdout.flush()
 
-                event = DbtCliEventMessage(
-                    raw_event=raw_event, event_history_metadata=event_history_metadata
+                continue
+
+            unique_id: Optional[str] = raw_event["data"].get("node_info", {}).get("unique_id")
+            is_result_event = DbtCliEventMessage.is_result_event(raw_event)
+            event_history_metadata: Dict[str, Any] = {}
+            if unique_id and is_result_event:
+                event_history_metadata = copy.deepcopy(
+                    event_history_metadata_by_unique_id.get(unique_id, {})
                 )
 
-                # Parse the error message from the event, if it exists.
-                is_error_message = event.log_level == "error"
-                if is_error_message and not is_result_event:
-                    self._error_messages.append(str(event))
+            event = DbtCliEventMessage(
+                raw_event=raw_event, event_history_metadata=event_history_metadata
+            )
 
-                # Attempt to parse the column level metadata from the event message.
-                # If it exists, save it as historical metadata to attach to the NodeFinished event.
-                if event.raw_event["info"]["name"] == "JinjaLogInfo":
-                    with contextlib.suppress(orjson.JSONDecodeError):
-                        column_level_metadata = orjson.loads(event.raw_event["info"]["msg"])
+            # Attempt to parse the column level metadata from the event message.
+            # If it exists, save it as historical metadata to attach to the NodeFinished event.
+            if event.raw_event["info"]["name"] == "JinjaLogInfo":
+                with contextlib.suppress(orjson.JSONDecodeError):
+                    column_level_metadata = orjson.loads(event.raw_event["info"]["msg"])
 
-                        event_history_metadata_by_unique_id[cast(str, unique_id)] = (
-                            column_level_metadata
-                        )
+                    event_history_metadata_by_unique_id[cast(str, unique_id)] = (
+                        column_level_metadata
+                    )
 
-                        # Don't show this message in stdout
-                        continue
+                    # Don't show this message in stdout
+                    continue
 
-                # Re-emit the logs from dbt CLI process into stdout.
-                sys.stdout.write(str(event) + "\n")
-                sys.stdout.flush()
+            # Re-emit the logs from dbt CLI process into stdout.
+            sys.stdout.write(str(event) + "\n")
+            sys.stdout.flush()
 
-                yield event
-            except:
-                # If we can't parse the log, then just emit it as a raw log.
-                sys.stdout.write(log + "\n")
-                sys.stdout.flush()
+            yield event
 
         # Ensure that the dbt CLI process has completed.
         self._raise_on_error()
@@ -719,7 +702,7 @@ class DbtCliInvocation:
         """The dbt CLI command that was invoked."""
         return " ".join(cast(Sequence[str], self.process.args))
 
-    def _stream_stdout(self) -> Iterator[str]:
+    def _stream_stdout(self) -> Iterator[Union[str, Dict[str, Any]]]:
         """Stream the stdout from the dbt CLI process."""
         try:
             if not self.process.stdout or self.process.stdout.closed:
@@ -727,9 +710,19 @@ class DbtCliInvocation:
 
             with self.process.stdout:
                 for raw_line in self.process.stdout or []:
-                    log: str = raw_line.decode().strip()
+                    raw_event = raw_line.decode().strip()
 
-                    yield log
+                    try:
+                        raw_event = orjson.loads(raw_event)
+
+                        # Parse the error message from the event, if it exists.
+                        is_error_message = raw_event["info"]["level"] == "error"
+                        if is_error_message:
+                            self._error_messages.append(raw_event["info"]["msg"])
+                    except:
+                        pass
+
+                    yield raw_event
         except DagsterExecutionInterruptedError:
             logger.info(f"Forwarding interrupt signal to dbt command: `{self.dbt_command}`.")
 
@@ -1458,7 +1451,7 @@ class DbtCliResource(ConfigurableResource):
 
         return current_target_path.joinpath(path)
 
-    def _initialize_adapter(self) -> BaseAdapter:
+    def _initialize_adapter(self, cli_vars) -> BaseAdapter:
         if not IS_DBT_CORE_VERSION_LESS_THAN_1_8_0:
             from dbt_common.context import set_invocation_context
 
@@ -1469,8 +1462,8 @@ class DbtCliResource(ConfigurableResource):
         set_from_args(Namespace(profiles_dir=profiles_dir), None)
         flags = get_flags()
 
-        profile = load_profile(self.project_dir, {}, self.profile, self.target)
-        project = load_project(self.project_dir, False, profile, {})
+        profile = load_profile(self.project_dir, cli_vars, self.profile, self.target)
+        project = load_project(self.project_dir, False, profile, cli_vars)
         config = RuntimeConfig.from_parts(project, profile, flags)
 
         # these flags are required for the adapter to be able to look up
@@ -1528,6 +1521,7 @@ class DbtCliResource(ConfigurableResource):
 
         return adapter
 
+    @public
     def get_defer_args(self) -> Sequence[str]:
         """Build the defer arguments for the dbt CLI command, using the supplied state directory.
         If no state directory is supplied, or the state directory does not have a manifest for.
@@ -1541,6 +1535,7 @@ class DbtCliResource(ConfigurableResource):
 
         return ["--defer", "--defer-state", self.state_path]
 
+    @public
     def get_state_args(self) -> Sequence[str]:
         """Build the state arguments for the dbt CLI command, using the supplied state directory.
         If no state directory is supplied, or the state directory does not have a manifest for.
@@ -1762,7 +1757,7 @@ class DbtCliResource(ConfigurableResource):
         if self.target:
             profile_args += ["--target", self.target]
 
-        args = [
+        full_dbt_args = [
             self.dbt_executable,
             *self.global_config_flags,
             *args,
@@ -1777,14 +1772,15 @@ class DbtCliResource(ConfigurableResource):
         adapter: Optional[BaseAdapter] = None
         with pushd(self.project_dir):
             try:
-                adapter = self._initialize_adapter()
+                cli_vars = parse_cli_vars_from_args(args)
+                adapter = self._initialize_adapter(cli_vars)
 
             except:
                 # defer exceptions until they can be raised in the runtime context of the invocation
                 pass
 
             return DbtCliInvocation.run(
-                args=args,
+                args=full_dbt_args,
                 env=env,
                 manifest=manifest,
                 dagster_dbt_translator=dagster_dbt_translator,
@@ -1794,6 +1790,15 @@ class DbtCliResource(ConfigurableResource):
                 context=context,
                 adapter=adapter,
             )
+
+
+def parse_cli_vars_from_args(args: Sequence[str]) -> Dict[str, Any]:
+    parser = ArgumentParser(description="Parse cli vars from dbt command")
+    parser.add_argument("--vars")
+    var_args, _ = parser.parse_known_args(args)
+    if not var_args.vars:
+        return {}
+    return parse_cli_vars(var_args.vars)
 
 
 def _get_subset_selection_for_context(

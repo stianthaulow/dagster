@@ -10,9 +10,11 @@ from dagster import (
     AssetKey,
     AssetOut,
     AssetsDefinition,
+    BackfillPolicy,
     DagsterEventType,
     DailyPartitionsDefinition,
     Definitions,
+    ExperimentalWarning,
     FreshnessPolicy,
     GraphOut,
     IdentityPartitionMapping,
@@ -166,7 +168,7 @@ def test_retain_group():
     replaced = bar.with_attributes(
         output_asset_key_replacements={AssetKey(["bar"]): AssetKey(["baz"])}
     )
-    assert replaced.group_names_by_key[AssetKey("baz")] == "foo"
+    assert replaced.specs_by_key[AssetKey("baz")].group_name == "foo"
 
 
 def test_retain_freshness_policy():
@@ -180,8 +182,8 @@ def test_retain_freshness_policy():
         output_asset_key_replacements={AssetKey(["bar"]): AssetKey(["baz"])}
     )
     assert (
-        replaced.freshness_policies_by_key[AssetKey(["baz"])]
-        == bar.freshness_policies_by_key[AssetKey(["bar"])]
+        replaced.specs_by_key[AssetKey(["baz"])].freshness_policy
+        == bar.specs_by_key[AssetKey(["bar"])].freshness_policy
     )
 
 
@@ -219,13 +221,14 @@ def test_graph_backed_retain_freshness_policy_and_auto_materialize_policy():
             AssetKey("c"): AssetKey("cc"),
         }
     )
-    assert replaced.freshness_policies_by_key[AssetKey("aa")] == fpa
-    assert replaced.freshness_policies_by_key[AssetKey("bb")] == fpb
-    assert replaced.freshness_policies_by_key.get(AssetKey("cc")) is None
+    specs_by_key = replaced.specs_by_key
+    assert specs_by_key[AssetKey("aa")].freshness_policy == fpa
+    assert specs_by_key[AssetKey("bb")].freshness_policy == fpb
+    assert specs_by_key[AssetKey("cc")].freshness_policy is None
 
-    assert replaced.auto_materialize_policies_by_key[AssetKey("aa")] == ampa
-    assert replaced.auto_materialize_policies_by_key[AssetKey("bb")] == ampb
-    assert replaced.auto_materialize_policies_by_key.get(AssetKey("cc")) is None
+    assert specs_by_key[AssetKey("aa")].auto_materialize_policy == ampa
+    assert specs_by_key[AssetKey("bb")].auto_materialize_policy == ampb
+    assert specs_by_key[AssetKey("cc")].auto_materialize_policy is None
 
 
 def test_retain_metadata_graph():
@@ -244,7 +247,8 @@ def test_retain_metadata_graph():
         output_asset_key_replacements={AssetKey(["bar"]): AssetKey(["baz"])}
     )
     assert (
-        replaced.metadata_by_key[AssetKey(["baz"])] == original.metadata_by_key[AssetKey(["bar"])]
+        replaced.specs_by_key[AssetKey(["baz"])].metadata
+        == original.specs_by_key[AssetKey(["bar"])].metadata
     )
 
 
@@ -262,7 +266,7 @@ def test_retain_group_subset():
     )
 
     subset = ma.subset_for({AssetKey("b")}, selected_asset_check_keys=None)
-    assert subset.group_names_by_key[AssetKey("b")] == "bar"
+    assert subset.specs_by_key[AssetKey("b")].group_name == "bar"
 
 
 def test_retain_partition_mappings():
@@ -886,21 +890,14 @@ def test_from_graph_w_key_prefix():
         "asset",
     ]
 
-    assert the_asset.group_names_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): "abc"
-    }
+    this_is_a_prefix_the_asset_spec = the_asset.specs_by_key[
+        AssetKey(["this", "is", "a", "prefix", "the", "asset"])
+    ]
 
-    assert the_asset.freshness_policies_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): freshness_policy
-    }
-
-    assert the_asset.descriptions_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): description
-    }
-
-    assert the_asset.metadata_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): metadata
-    }
+    assert this_is_a_prefix_the_asset_spec.group_name == "abc"
+    assert this_is_a_prefix_the_asset_spec.freshness_policy == freshness_policy
+    assert this_is_a_prefix_the_asset_spec.description == description
+    assert this_is_a_prefix_the_asset_spec.metadata == metadata
 
     str_prefix = AssetsDefinition.from_graph(
         graph_def=silly_graph,
@@ -945,21 +942,14 @@ def test_from_op_w_key_prefix():
         "asset",
     ]
 
-    assert the_asset.group_names_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): "abc"
-    }
+    this_is_a_prefix_the_asset_spec = the_asset.specs_by_key[
+        AssetKey(["this", "is", "a", "prefix", "the", "asset"])
+    ]
 
-    assert the_asset.freshness_policies_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): freshness_policy
-    }
-
-    assert the_asset.descriptions_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): description
-    }
-
-    assert the_asset.metadata_by_key == {
-        AssetKey(["this", "is", "a", "prefix", "the", "asset"]): metadata
-    }
+    assert this_is_a_prefix_the_asset_spec.group_name == "abc"
+    assert this_is_a_prefix_the_asset_spec.freshness_policy == freshness_policy
+    assert this_is_a_prefix_the_asset_spec.description == description
+    assert this_is_a_prefix_the_asset_spec.metadata == metadata
 
     str_prefix = AssetsDefinition.from_op(
         op_def=foo,
@@ -2110,10 +2100,8 @@ def test_asset_spec_with_code_versions():
         yield MaterializeResult("a")
         yield MaterializeResult("b")
 
-    assert multi_asset_with_versions.code_versions_by_key == {
-        AssetKey(["a"]): "1",
-        AssetKey(["b"]): "2",
-    }
+    code_versions_by_key = {spec.key: spec.code_version for spec in multi_asset_with_versions.specs}
+    assert code_versions_by_key == {AssetKey(["a"]): "1", AssetKey(["b"]): "2"}
 
 
 def test_asset_spec_with_metadata():
@@ -2124,17 +2112,15 @@ def test_asset_spec_with_metadata():
         yield MaterializeResult("a")
         yield MaterializeResult("b")
 
-    assert multi_asset_with_metadata.metadata_by_key == {
-        AssetKey(["a"]): {"foo": "1"},
-        AssetKey(["b"]): {"bar": "2"},
-    }
+    metadata_by_key = {spec.key: spec.metadata for spec in multi_asset_with_metadata.specs}
+    assert metadata_by_key == {AssetKey(["a"]): {"foo": "1"}, AssetKey(["b"]): {"bar": "2"}}
 
 
 def test_asset_with_tags():
     @asset(tags={"a": "b"})
     def asset1(): ...
 
-    assert asset1.tags_by_key[asset1.key] == {"a": "b"}
+    assert asset1.specs_by_key[asset1.key].tags == {"a": "b"}
 
     with pytest.raises(DagsterInvalidDefinitionError, match="Invalid tag key"):
 
@@ -2146,12 +2132,12 @@ def test_asset_with_storage_kind_tag() -> None:
     @asset(tags={**StorageKindTagSet(storage_kind="snowflake")})
     def asset1(): ...
 
-    assert asset1.tags_by_key[asset1.key] == {"dagster/storage_kind": "snowflake"}
+    assert asset1.specs_by_key[asset1.key].tags == {"dagster/storage_kind": "snowflake"}
 
     @asset(tags={**StorageKindTagSet(storage_kind="snowflake"), "a": "b"})
     def asset2(): ...
 
-    assert asset2.tags_by_key[asset2.key] == {
+    assert asset2.specs_by_key[asset2.key].tags == {
         "dagster/storage_kind": "snowflake",
         "a": "b",
     }
@@ -2161,7 +2147,7 @@ def test_asset_spec_with_tags():
     @multi_asset(specs=[AssetSpec("asset1", tags={"a": "b"})])
     def assets(): ...
 
-    assert assets.tags_by_key[AssetKey("asset1")] == {"a": "b"}
+    assert assets.specs_by_key[AssetKey("asset1")].tags == {"a": "b"}
 
     with pytest.raises(DagsterInvalidDefinitionError, match="Invalid tag key"):
 
@@ -2173,7 +2159,7 @@ def test_asset_out_with_tags():
     @multi_asset(outs={"asset1": AssetOut(tags={"a": "b"})})
     def assets(): ...
 
-    assert assets.tags_by_key[AssetKey("asset1")] == {"a": "b"}
+    assert assets.specs_by_key[AssetKey("asset1")].tags == {"a": "b"}
 
     with pytest.raises(DagsterInvalidDefinitionError, match="Invalid tag key"):
 
@@ -2190,3 +2176,36 @@ def test_asset_spec_skippable():
         node_def=op1, keys_by_output_name={"result": AssetKey("asset1")}, keys_by_input_name={}
     )
     assert next(iter(assets_def.specs)).skippable
+
+
+def test_construct_assets_definition_no_args() -> None:
+    with pytest.raises(CheckError, match="If specs are not provided, a node_def must be provided"):
+        AssetsDefinition()
+
+
+def test_construct_assets_definition_without_node_def() -> None:
+    spec = AssetSpec("asset1", tags={"foo": "bar"}, group_name="hello")
+    with pytest.warns(ExperimentalWarning):
+        assets_def = AssetsDefinition(specs=[spec])
+    assert not assets_def.is_executable
+    assert list(assets_def.specs) == [spec]
+
+
+def test_construct_assets_definition_without_node_def_attr_by_keys() -> None:
+    with pytest.raises(CheckError):
+        AssetsDefinition(group_names_by_key={AssetKey("foo"): "foo_group"})
+
+
+def test_construct_assets_definition_without_node_def_with_bad_param_combo() -> None:
+    spec = AssetSpec("asset1", tags={"foo": "bar"}, group_name="hello")
+    with pytest.raises(CheckError):
+        AssetsDefinition(specs=[spec], backfill_policy=BackfillPolicy.single_run())
+
+    with pytest.raises(CheckError):
+        AssetsDefinition(specs=[spec], keys_by_input_name={"input": AssetKey("asset0")})
+
+    with pytest.raises(CheckError):
+        AssetsDefinition(specs=[spec], keys_by_output_name={"result": AssetKey("asset1")})
+
+    with pytest.raises(CheckError):
+        AssetsDefinition(specs=[spec], can_subset=True)

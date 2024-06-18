@@ -50,15 +50,8 @@ from dagster._core.execution.plan.outputs import StepOutputData
 from dagster._core.log_manager import DagsterLogManager
 from dagster._core.storage.captured_log_manager import CapturedLogContext
 from dagster._core.storage.dagster_run import DagsterRunStatus
-from dagster._serdes import (
-    NamedTupleSerializer,
-    whitelist_for_serdes,
-)
-from dagster._serdes.serdes import (
-    EnumSerializer,
-    UnpackContext,
-    is_whitelisted_for_serdes_object,
-)
+from dagster._serdes import NamedTupleSerializer, whitelist_for_serdes
+from dagster._serdes.serdes import EnumSerializer, UnpackContext, is_whitelisted_for_serdes_object
 from dagster._utils.error import SerializableErrorInfo, serializable_error_info_from_exc_info
 from dagster._utils.timing import format_duration
 
@@ -1096,6 +1089,7 @@ class DagsterEvent(
         context_msg: str,
         failure_reason: RunFailureReason,
         error_info: Optional[SerializableErrorInfo] = None,
+        first_step_failure_event: Optional["DagsterEvent"] = None,
     ) -> "DagsterEvent":
         check.str_param(context_msg, "context_msg")
         if isinstance(job_context_or_name, IPlanContext):
@@ -1105,7 +1099,11 @@ class DagsterEvent(
                 message=(
                     f'Execution of run for "{job_context_or_name.job_name}" failed. {context_msg}'
                 ),
-                event_specific_data=JobFailureData(error_info, failure_reason=failure_reason),
+                event_specific_data=JobFailureData(
+                    error_info,
+                    failure_reason=failure_reason,
+                    first_step_failure_event=first_step_failure_event,
+                ),
             )
         else:
             # when the failure happens trying to bring up context, the job_context hasn't been
@@ -1744,6 +1742,7 @@ class JobFailureData(
         [
             ("error", Optional[SerializableErrorInfo]),
             ("failure_reason", Optional[RunFailureReason]),
+            ("first_step_failure_event", Optional["DagsterEvent"]),
         ],
     )
 ):
@@ -1751,11 +1750,15 @@ class JobFailureData(
         cls,
         error: Optional[SerializableErrorInfo],
         failure_reason: Optional[RunFailureReason] = None,
+        first_step_failure_event: Optional["DagsterEvent"] = None,
     ):
         return super(JobFailureData, cls).__new__(
             cls,
             error=check.opt_inst_param(error, "error", SerializableErrorInfo),
             failure_reason=check.opt_inst_param(failure_reason, "failure_reason", RunFailureReason),
+            first_step_failure_event=check.opt_inst_param(
+                first_step_failure_event, "first_step_failure_event", DagsterEvent
+            ),
         )
 
 

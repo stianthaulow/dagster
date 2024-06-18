@@ -1,13 +1,5 @@
 from enum import Enum
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Iterable,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Sequence,
-)
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional, Sequence
 
 import dagster._check as check
 from dagster._annotations import PublicAttr, experimental_param
@@ -16,10 +8,7 @@ from dagster._serdes.serdes import whitelist_for_serdes
 from dagster._utils.internal_init import IHasInternalInit
 
 from .auto_materialize_policy import AutoMaterializePolicy
-from .events import (
-    AssetKey,
-    CoercibleToAssetKey,
-)
+from .events import AssetKey, CoercibleToAssetKey
 from .freshness_policy import FreshnessPolicy
 from .utils import validate_tags_strict
 
@@ -33,6 +22,12 @@ if TYPE_CHECKING:
 # log keyed off of them, making Dagster usable as a observability and lineage tool
 # for externally materialized assets.
 SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE = "dagster/asset_execution_type"
+
+
+# SYSTEM_METADATA_KEY_IO_MANAGER_KEY lives on the metadata of an asset without a node def and
+# determines the io_manager_key that can be used to load it. This is necessary because IO manager
+# keys are otherwise encoded inside OutputDefinitions within NodeDefinitions.
+SYSTEM_METADATA_KEY_IO_MANAGER_KEY = "dagster/io_manager_key"
 
 # SYSTEM_METADATA_KEY_AUTO_OBSERVE_INTERVAL_MINUTES lives on the metadata of
 # external assets resulting from a source asset conversion. It contains the

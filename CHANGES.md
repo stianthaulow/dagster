@@ -1,5 +1,76 @@
 # Changelog
 
+# 1.7.10 (core)/ 0.23.10 (libraries)
+
+### New
+
+- Performance improvements when rendering the asset graph while runs are in progress.
+- A new API `build_freshness_checks_for_dbt_assets` which allows users to parameterize freshness checks entirely within dbt. Check out the API docs for more: https://docs.dagster.io/_apidocs/libraries/dagster-dbt#dbt-dagster-dbt.
+- Asset search results now display compute and storage kind icons.
+- Asset jobs where the underlying assets have multiple backfill policies will no longer fail at definition time. Instead, the backfill policy for the job will use the minimum `max_partitions_per_run` from the job’s constituent assets.
+- [dagstermill] `asset_tags` can now be specified when building dagstermill assets
+- [dagster-embedded-elt] Custom asset tags can be applied to Sling assets via the `DagsterSlingTranslator`
+- [dagster-embedded-elt] dlt assets now automatically have `dagster/storage_kind` tags attached
+
+### Bugfixes
+
+- `tags` passed to `outs` in `graph_multi_asset` now get correctly propagated to the resulting assets.
+- [ui] Fixed an issue in the where when multiple runs were started at the same time to materialize the same asset, the most recent one was not always shown as in progress in the asset graph in the Dagster UI.
+- The “newly updated” auto-materialize rule will now respond to either new observations or materializations for observable assets.
+- `build_metadata_bounds_checks` now no longer errors when targeting metadata keys that have special characters.
+
+### Documentation
+
+- The [Schedule concept docs](https://docs.dagster.io/concepts/automation/schedules) got a revamp! Specifically, we:
+  - Updated the Schedule concept page to be a “jumping off” point for all-things scheduling, including a high-level look at how schedules work, their benefits, and what you need to know before diving in
+  - Added some basic how-to guides for [automating assets](https://docs.dagster.io/concepts/automation/schedules/automating-assets-schedules-jobs) and [ops](https://docs.dagster.io/concepts/automation/schedules/automating-ops-schedules-jobs) using schedules
+  - Added a [reference of schedule-focused examples](https://docs.dagster.io/concepts/automation/schedules/examples)
+  - Added dedicated guides for common schedule uses, including creating p[artitioned schedules](https://docs.dagster.io/concepts/automation/schedules/partitioned-schedules), [customizing executing timezones](https://docs.dagster.io/concepts/automation/schedules/customizing-executing-timezones), [testing](https://docs.dagster.io/concepts/automation/schedules/testing), and [troubleshooting](https://docs.dagster.io/concepts/automation/schedules/troubleshooting)
+
+### Dagster Plus
+
+- [experimental] The backfill daemon can now store logs and display them in the UI for increased visibility into the daemon’s behavior. Please contact Dagster Labs if you are interested in piloting this experimental feature.
+- Added a `--read-only` flag to the `dagster-cloud ci branch-deployment` CLI command, which returns the current branch deployment name for the current code repository branch without update the status of the branch deployment.
+
+# 1.7.9 (core) / 0.23.9 (libraries)
+
+### New
+
+- Dagster will now display a “storage kind” tag on assets in the UI, similar to the existing compute kind. To set storage kind for an asset, set its `dagster/storage_kind` tag.
+- You can now set retry policy on dbt assets, to enable coarse-grained retries with delay and jitter. For fine-grained partial retries, we still recommend invoking `dbt retry` within a try/except block to avoid unnecessary, duplicate work.
+- `AssetExecutionContext` now exposes a `has_partition_key_range` property.
+- The `owners`, `metadata`, `tags`, and `deps` properties on `AssetSpec` are no longer `Optional`. The `AssetSpec` constructor still accepts `None` values, which are coerced to empty collections of the relevant type.
+- The `docker_executor` and `k8s_job_executor` now consider at most 1000 events at a time when loading events from the current run to determine which steps should be launched. This value can be tuned by setting the `DAGSTER_EXECUTOR_POP_EVENTS_LIMIT` environment variable in the run process.
+- Added a `dagster/retry_on_asset_or_op_failure` tag that can be added to jobs to override run retry behavior for runs of specific jobs. See [the docs](https://docs.dagster.io/deployment/run-retries#combining-op-and-run-retries) for more information.
+- Improved the sensor produced by `build_sensor_for_freshness_checks` to describe when/why it skips evaluating freshness checks.
+- A new “Runs” tab on the backfill details page allows you to see list and timeline views of the runs launched by the backfill.
+- [dagster-dbt] dbt will now attach relation identifier metadata to asset materializations to indicate where the built model is materialized to.
+- [dagster-graphql] The GraphQL Python client will now include the HTTP error code in the exception when a query fails. Thanks [@yuvalgimmunai](https://github.com/yuvalgimmunai)!
+
+### Bugfixes
+
+- Fixed sensor logging behavior with the `@multi_asset_sensor`.
+- `ScheduleDefinition` now properly supports being passed a `RunConfig` object.
+- When an asset function returns a `MaterializeResult`, but the function has no type annotation, previously, the IO manager would still be invoked with a `None` value. Now, the IO manager is not invoked.
+- The `AssetSpec` constructor now raises an error if an invalid owner string is passed to it.
+- When using the `graph_multi_asset` decorator, the `code_version` property on `AssetOut`s passed in used to be ignored. Now, they no longer are.
+- [dagster-deltalake] Fixed GcsConfig import error and type error for partitioned assets (Thanks [@thmswt](https://github.com/thmswt))
+- The asset graph and asset catalog now show the materialization status of External assets (when manually reported) rather than showing “Never observed”
+
+### Documentation
+
+- The External Assets REST APIs now have their own [reference page](https://docs.dagster.io/apidocs/external-assets-rest)
+- Added details, updated copy, and improved formatting to External Assets REST APIs
+
+### Dagster Plus
+
+- The ability to set a custom base deployment when creating a branch deployment has been enabled for all organizations.
+- When a code location fails to deploy, the Kubernetes agent now includes additional any warning messages from the underlying replicaset in the failure message to aid with troubleshooting.
+- Serverless deployments now support using a requirements.txt with [hashes](https://pip.pypa.io/en/stable/topics/secure-installs/#secure-installs).
+- Fixed an issue where the `dagster-cloud job launch` command did not support specifying asset keys with prefixes in the `--asset-key` argument.
+- [catalog UI] Catalog search now allows filtering by type, i.e. `group:`, `code location:`, `tag:`, `owner:`.
+- New dagster+ accounts will now start with two default alert policies; one to alert if the default free credit budget for your plan is exceeded, and one to alert if a single run goes over 24 hours. These alerts will be sent as emails to the email with which the account was initially created.
+
 # 1.7.8 (core) / 0.23.8 (libraries)
 
 ### New

@@ -15,9 +15,7 @@ from dagster._core.definitions.metadata import (
     MetadataValue,
     TimestampMetadataValue,
 )
-from dagster._core.execution.context.compute import (
-    AssetCheckExecutionContext,
-)
+from dagster._core.execution.context.compute import AssetCheckExecutionContext
 from dagster._utils.schedules import (
     get_latest_completed_cron_tick,
     get_next_cron_tick,
@@ -39,7 +37,7 @@ from ..utils import (
     ensure_no_duplicate_assets,
     freshness_multi_asset_check,
     get_last_updated_timestamp,
-    retrieve_latest_record,
+    retrieve_last_update_record,
     seconds_in_words,
 )
 
@@ -188,7 +186,7 @@ def _build_freshness_multi_check(
 
             last_update_time_lower_bound = cast(datetime.datetime, deadline - lower_bound_delta)
 
-            latest_record = retrieve_latest_record(
+            latest_record = retrieve_last_update_record(
                 instance=context.instance, asset_key=asset_key, partition_key=None
             )
             update_timestamp = get_last_updated_timestamp(latest_record, context)

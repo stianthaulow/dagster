@@ -241,9 +241,7 @@ class ScheduleEvaluationContext:
         """Mapping of resource key to resource definition to be made available
         during schedule execution.
         """
-        from dagster._core.definitions.scoped_resources_builder import (
-            IContainsGenerator,
-        )
+        from dagster._core.definitions.scoped_resources_builder import IContainsGenerator
         from dagster._core.execution.build_resources import build_resources
 
         if not self._resources:
@@ -341,7 +339,7 @@ class ScheduleEvaluationContext:
                     InstigationLogger(
                         self._log_key,
                         repository_name=self._repository_name,
-                        name=self._schedule_name,
+                        instigator_name=self._schedule_name,
                     )
                 )
             else:
@@ -350,7 +348,7 @@ class ScheduleEvaluationContext:
                         self._log_key,
                         self.instance,
                         repository_name=self._repository_name,
-                        name=self._schedule_name,
+                        instigator_name=self._schedule_name,
                     )
                 )
 

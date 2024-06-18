@@ -1,6 +1,7 @@
+import {GoogleTagManager} from '@next/third-parties/google';
 import Document, {Head, Html, Main, NextScript} from 'next/document';
 
-import {GA_TRACKING_ID} from '../util/gtag';
+import {GA_TRACKING_ID, GTM_ID} from '../util/gtag';
 
 export default class MyDocument extends Document {
   render() {
@@ -9,6 +10,7 @@ export default class MyDocument extends Document {
         <Head>
           {process.env.NODE_ENV === 'production' && (
             <>
+              <GoogleTagManager gtmId="GTM-T87Z967J" />
               {/* Global Site Tag (gtag.js) - Google Analytics */}
               <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_TRACKING_ID}`} />
               <script
@@ -17,9 +19,10 @@ export default class MyDocument extends Document {
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
+            gtag('config', '${GTM_ID}'); // GTM
             gtag('config', '${GA_TRACKING_ID}', {
               page_path: window.location.pathname,
-            });
+            }); // GA
           `,
                 }}
               />

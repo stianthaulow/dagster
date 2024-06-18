@@ -24,9 +24,7 @@ from dagster._core.definitions.partition_mapping import PartitionMapping
 from dagster._core.definitions.resolved_asset_deps import ResolvedAssetDependencies
 from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.definitions.utils import DEFAULT_GROUP_NAME
-from dagster._core.selector.subset_selector import (
-    generate_asset_dep_graph,
-)
+from dagster._core.selector.subset_selector import generate_asset_dep_graph
 
 
 class AssetNode(BaseAssetNode):
@@ -43,14 +41,15 @@ class AssetNode(BaseAssetNode):
         self.child_keys = child_keys
         self.assets_def = assets_def
         self._check_keys = check_keys
+        self._spec = assets_def.specs_by_key[key]
 
     @property
     def description(self) -> Optional[str]:
-        return self.assets_def.specs_by_key[self.key].description
+        return self._spec.description
 
     @property
     def group_name(self) -> str:
-        return self.assets_def.specs_by_key[self.key].group_name or DEFAULT_GROUP_NAME
+        return self._spec.group_name or DEFAULT_GROUP_NAME
 
     @property
     def is_materializable(self) -> bool:
@@ -70,15 +69,15 @@ class AssetNode(BaseAssetNode):
 
     @property
     def metadata(self) -> ArbitraryMetadataMapping:
-        return self.assets_def.specs_by_key[self.key].metadata or {}
+        return self._spec.metadata
 
     @property
     def tags(self) -> Mapping[str, str]:
-        return self.assets_def.tags_by_key.get(self.key, {})
+        return self._spec.tags
 
     @property
     def owners(self) -> Sequence[str]:
-        return self.assets_def.specs_by_key[self.key].owners or []
+        return self._spec.owners
 
     @property
     def is_partitioned(self) -> bool:
@@ -94,11 +93,11 @@ class AssetNode(BaseAssetNode):
 
     @property
     def freshness_policy(self) -> Optional[FreshnessPolicy]:
-        return self.assets_def.specs_by_key[self.key].freshness_policy
+        return self._spec.freshness_policy
 
     @property
     def auto_materialize_policy(self) -> Optional[AutoMaterializePolicy]:
-        return self.assets_def.specs_by_key[self.key].auto_materialize_policy
+        return self._spec.auto_materialize_policy
 
     @property
     def auto_observe_interval_minutes(self) -> Optional[float]:
@@ -110,7 +109,7 @@ class AssetNode(BaseAssetNode):
 
     @property
     def code_version(self) -> Optional[str]:
-        return self.assets_def.specs_by_key[self.key].code_version
+        return self._spec.code_version
 
     @property
     def check_keys(self) -> AbstractSet[AssetCheckKey]:
@@ -142,7 +141,7 @@ class AssetNode(BaseAssetNode):
         return self.assets_def.get_io_manager_key_for_asset_key(self.key)
 
     def to_asset_spec(self) -> AssetSpec:
-        return self.assets_def.specs_by_key[self.key]
+        return self._spec
 
 
 class AssetGraph(BaseAssetGraph[AssetNode]):
@@ -185,14 +184,23 @@ class AssetGraph(BaseAssetGraph[AssetNode]):
         # Resolve all asset dependencies. An asset dependency is resolved when its key is an
         # AssetKey not subject to any further manipulation.
         resolved_deps = ResolvedAssetDependencies(assets_defs, [])
-        assets_defs = [
-            ad.with_attributes(
-                input_asset_key_replacements={
-                    raw_key: resolved_deps.get_resolved_asset_key_for_input(ad, input_name)
-                    for input_name, raw_key in ad.keys_by_input_name.items()
-                }
-            )
+
+        input_asset_key_replacements = [
+            {
+                raw_key: normalized_key
+                for input_name, raw_key in ad.keys_by_input_name.items()
+                if (
+                    normalized_key := resolved_deps.get_resolved_asset_key_for_input(ad, input_name)
+                )
+                != raw_key
+            }
             for ad in assets_defs
+        ]
+
+        # Only update the assets defs if we're actually replacing input asset keys
+        assets_defs = [
+            ad.with_attributes(input_asset_key_replacements=reps) if reps else ad
+            for ad, reps in zip(assets_defs, input_asset_key_replacements)
         ]
 
         # Create unexecutable external assets definitions for any referenced keys for which no

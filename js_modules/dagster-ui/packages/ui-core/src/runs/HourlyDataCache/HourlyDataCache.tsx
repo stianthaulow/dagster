@@ -7,7 +7,7 @@ export const ONE_HOUR_S = 60 * 60;
 type Subscription<T> = (data: T[]) => void;
 
 export const defaultOptions = {
-  expiry: new Date('3000-01-01'), // never expire,
+  expiry: new Date('3030-01-01'), // never expire,
 };
 
 export class HourlyDataCache<T> {
@@ -22,6 +22,9 @@ export class HourlyDataCache<T> {
    */
   constructor(id?: string | false, keyPrefix = '', keyMaxCount = 1) {
     this.indexedDBKey = keyPrefix ? `${keyPrefix}-hourlyData` : 'hourlyData';
+
+    // Delete old database from before the prefix, remove this at some point
+    indexedDB.deleteDatabase('HourlyDataCache:useRunsForTimeline');
 
     if (id) {
       this.indexedDBCache = cache<string, typeof this.cache>({
@@ -59,11 +62,32 @@ export class HourlyDataCache<T> {
     return await this.loadPromise;
   }
 
+  private saveTimeout?: ReturnType<typeof setTimeout>;
+  private registeredUnload: boolean = false;
   private async saveCacheToIndexedDB() {
-    if (!this.indexedDBCache) {
+    if (typeof jest !== 'undefined') {
+      if (!this.indexedDBCache) {
+        return;
+      }
+      this.indexedDBCache.set(this.indexedDBKey, this.cache, defaultOptions);
       return;
     }
-    await this.indexedDBCache.set(this.indexedDBKey, this.cache, defaultOptions);
+    clearTimeout(this.saveTimeout);
+    this.saveTimeout = setTimeout(() => {
+      if (!this.indexedDBCache) {
+        return;
+      }
+      this.indexedDBCache.set(this.indexedDBKey, this.cache, defaultOptions);
+    }, 10000);
+    if (!this.registeredUnload) {
+      this.registeredUnload = true;
+      window.addEventListener('beforeunload', () => {
+        if (!this.indexedDBCache) {
+          return;
+        }
+        this.indexedDBCache.set(this.indexedDBKey, this.cache, defaultOptions);
+      });
+    }
   }
 
   public async clearOldEntries() {
@@ -76,7 +100,6 @@ export class HourlyDataCache<T> {
         this.cache.delete(ts);
       }
     }
-    await this.saveCacheToIndexedDB();
   }
 
   /**
@@ -229,7 +252,7 @@ export class HourlyDataCache<T> {
    * @param callback - The callback function to notify when new data is added.
    */
   subscribe(ts: number, callback: Subscription<T>) {
-    const startHour = Math.ceil(ts / ONE_HOUR_S);
+    const startHour = Math.floor(ts / ONE_HOUR_S);
     const sub = {hour: startHour, callback};
     this.subscriptions.push(sub);
     this.notifyExistingData(startHour, callback);

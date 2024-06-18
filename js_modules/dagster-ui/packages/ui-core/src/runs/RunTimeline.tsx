@@ -93,14 +93,19 @@ export const RunTimeline = (props: Props) => {
   const [_, end] = rangeMs;
   const includesTicks = now <= end;
 
-  const buckets = jobs.reduce(
-    (accum, job) => {
-      const {repoAddress} = job;
-      const repoKey = repoAddressAsURLString(repoAddress);
-      const jobsForRepo = accum[repoKey] || [];
-      return {...accum, [repoKey]: [...jobsForRepo, job]};
-    },
-    {} as Record<string, TimelineJob[]>,
+  const buckets = React.useMemo(
+    () =>
+      jobs.reduce(
+        (accum, job) => {
+          const {repoAddress} = job;
+          const repoKey = repoAddressAsURLString(repoAddress);
+          accum[repoKey] = accum[repoKey] || [];
+          accum[repoKey]!.push(job);
+          return accum;
+        },
+        {} as Record<string, TimelineJob[]>,
+      ),
+    [jobs],
   );
 
   const allKeys = Object.keys(buckets);
